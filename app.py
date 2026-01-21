@@ -198,10 +198,12 @@ if prompt := st.chat_input("Ask a question from your documents"):
             
             # Use selected documents if specified
             if st.session_state.selected_docs:
+                logger.info(f"Querying with selected documents: {st.session_state.selected_docs}")
                 for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs):
                     full_response += chunk
                     response_placeholder.markdown(full_response)
             else:
+                logger.info("Querying with all documents")
                 for chunk in ask_rag_stream(prompt):
                     full_response += chunk
                     response_placeholder.markdown(full_response)
@@ -212,8 +214,14 @@ if prompt := st.chat_input("Ask a question from your documents"):
             # Non-streaming mode
             with st.spinner("Thinking..."):
                 if st.session_state.selected_docs:
-                    answer = ask_rag_with_docs(prompt, st.session_state.selected_docs)
+                    logger.info(f"Querying with selected documents: {st.session_state.selected_docs}")
+                    # ask_rag_with_docs is a generator, need to collect all chunks
+                    full_response = ""
+                    for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs):
+                        full_response += chunk
+                    answer = full_response
                 else:
+                    logger.info("Querying with all documents")
                     answer = ask_rag(prompt)
             st.markdown(answer)
             

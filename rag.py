@@ -60,11 +60,21 @@ def get_context(question, k=3, selected_docs=None):
         selected_indices = []
         for idx, metadata in doc_metadata.items():
             doc_name = metadata.get('source', '')
+            # Check if any selected document name is contained in the metadata source
+            # This handles cases where the full path might be stored
             if any(selected in doc_name for selected in selected_docs):
                 selected_indices.append(idx)
         
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Selected docs: {selected_docs}")
+        logger.info(f"Available doc names in metadata: {set([m.get('source', '') for m in doc_metadata.values()])}")
+        logger.info(f"Found {len(selected_indices)} chunks for selected documents")
+        
         if not selected_indices:
             # No chunks found for selected documents
+            logger.warning(f"No chunks found for selected documents: {selected_docs}")
             return ""
         
         # Search only within selected document chunks
@@ -76,7 +86,12 @@ def get_context(question, k=3, selected_docs=None):
             
             if selected_embeddings:
                 selected_embeddings = np.array(selected_embeddings)
-                distances, local_indices = index.search(q_emb, min(k, len(selected_indices)))
+                # Create a temporary index for selected embeddings
+                temp_index = faiss.IndexFlatL2(selected_embeddings.shape[1])
+                temp_index.add(selected_embeddings)
+                
+                # Search within selected embeddings
+                distances, local_indices = temp_index.search(q_emb, min(k, len(selected_indices)))
                 
                 # Map local indices back to global indices
                 filtered_contexts = []
@@ -122,6 +137,11 @@ def ask_rag(question, k=3):
     
     context = get_context(question, k)
     
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Context retrieved: {len(context)} characters")
+    
     # Check if context is empty
     if not context:
         return "Not found in documents."
@@ -159,6 +179,11 @@ def ask_rag_stream(question, k=3):
         return
     
     context = get_context(question, k)
+    
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Context retrieved: {len(context)} characters")
     
     # Check if context is empty
     if not context:
@@ -201,6 +226,11 @@ def ask_rag_with_docs(question, selected_docs, k=3):
         return
     
     context = get_context(question, k, selected_docs)
+    
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Context retrieved: {len(context)} characters")
     
     # Check if context is empty
     if not context:

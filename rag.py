@@ -129,8 +129,8 @@ def get_context(question, k=3, selected_docs=None):
     
     return context
 
-def ask_rag(question, k=3):
-    """Non-streaming version of RAG query"""
+def ask_rag(question, k=3, conversation_history=None):
+    """Non-streaming version of RAG query with conversation history support"""
     # Check if index exists
     if index is None:
         return "No documents have been indexed yet. Please convert documents to vectors first."
@@ -146,33 +146,38 @@ def ask_rag(question, k=3):
     if not context:
         return "Not found in documents."
     
-    prompt = f"""
-You are a document assistant.
+    # Build messages with conversation history
+    messages = []
+    
+    # Add system prompt
+    system_prompt = """You are a document assistant.
 Answer ONLY using the context below.
 If the answer is not in the context, say:
 "Not found in documents."
 
-Context:
-{context}
-
-Question:
-{question}
-
-IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources.
-"""
+IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources."""
+    
+    messages.append({"role": "system", "content": system_prompt})
+    
+    # Add conversation history if provided
+    if conversation_history:
+        for msg in conversation_history:
+            messages.append(msg)
+    
+    # Add context and current question
+    context_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
+    messages.append({"role": "user", "content": context_prompt})
 
     response = client.chat.completions.create(
         model="meta-llama-3.1-8b-instruct",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=messages,
         temperature=0.2
     )
 
     return response.choices[0].message.content.strip()
 
-def ask_rag_stream(question, k=3):
-    """Streaming version of RAG query - yields chunks of response"""
+def ask_rag_stream(question, k=3, conversation_history=None):
+    """Streaming version of RAG query with conversation history support - yields chunks of response"""
     # Check if index exists
     if index is None:
         yield "No documents have been indexed yet. Please convert documents to vectors first."
@@ -190,26 +195,31 @@ def ask_rag_stream(question, k=3):
         yield "Not found in documents."
         return
     
-    prompt = f"""
-You are a document assistant.
+    # Build messages with conversation history
+    messages = []
+    
+    # Add system prompt
+    system_prompt = """You are a document assistant.
 Answer ONLY using the context below.
 If the answer is not in the context, say:
 "Not found in documents."
 
-Context:
-{context}
-
-Question:
-{question}
-
-IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources.
-"""
+IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources."""
+    
+    messages.append({"role": "system", "content": system_prompt})
+    
+    # Add conversation history if provided
+    if conversation_history:
+        for msg in conversation_history:
+            messages.append(msg)
+    
+    # Add context and current question
+    context_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
+    messages.append({"role": "user", "content": context_prompt})
 
     response = client.chat.completions.create(
         model="meta-llama-3.1-8b-instruct",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=messages,
         temperature=0.2,
         stream=True
     )
@@ -218,8 +228,8 @@ IMPORTANT: Only use information from the context above. Do not use any external 
         if chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
 
-def ask_rag_with_docs(question, selected_docs, k=3):
-    """Streaming version of RAG query with specific documents - yields chunks of response"""
+def ask_rag_with_docs(question, selected_docs, k=3, conversation_history=None):
+    """Streaming version of RAG query with specific documents and conversation history - yields chunks of response"""
     # Check if index exists
     if index is None:
         yield "No documents have been indexed yet. Please convert documents to vectors first."
@@ -237,26 +247,31 @@ def ask_rag_with_docs(question, selected_docs, k=3):
         yield "Not found in documents."
         return
     
-    prompt = f"""
-You are a document assistant.
+    # Build messages with conversation history
+    messages = []
+    
+    # Add system prompt
+    system_prompt = """You are a document assistant.
 Answer ONLY using the context below.
 If the answer is not in the context, say:
 "Not found in documents."
 
-Context:
-{context}
-
-Question:
-{question}
-
-IMPORTANT: Only use information from the selected documents. Do not use any external knowledge or information from other sources.
-"""
+IMPORTANT: Only use information from the selected documents. Do not use any external knowledge or information from other sources."""
+    
+    messages.append({"role": "system", "content": system_prompt})
+    
+    # Add conversation history if provided
+    if conversation_history:
+        for msg in conversation_history:
+            messages.append(msg)
+    
+    # Add context and current question
+    context_prompt = f"Context:\n{context}\n\nQuestion:\n{question}"
+    messages.append({"role": "user", "content": context_prompt})
 
     response = client.chat.completions.create(
         model="meta-llama-3.1-8b-instruct",
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=messages,
         temperature=0.2,
         stream=True
     )

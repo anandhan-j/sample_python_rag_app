@@ -191,6 +191,14 @@ if prompt := st.chat_input("Ask a question from your documents"):
     
     # Generate assistant response
     with st.chat_message("assistant"):
+        # Build conversation history for context (excluding current prompt)
+        conversation_history = []
+        for msg in st.session_state.messages[:-1]:  # Exclude the current user message
+            if msg["role"] == "user":
+                conversation_history.append({"role": "user", "content": msg["content"]})
+            elif msg["role"] == "assistant":
+                conversation_history.append({"role": "assistant", "content": msg["content"]})
+        
         if st.session_state.streaming:
             # Streaming mode
             response_placeholder = st.empty()
@@ -199,12 +207,12 @@ if prompt := st.chat_input("Ask a question from your documents"):
             # Use selected documents if specified
             if st.session_state.selected_docs:
                 logger.info(f"Querying with selected documents: {st.session_state.selected_docs}")
-                for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs):
+                for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs, conversation_history=conversation_history):
                     full_response += chunk
                     response_placeholder.markdown(full_response)
             else:
                 logger.info("Querying with all documents")
-                for chunk in ask_rag_stream(prompt):
+                for chunk in ask_rag_stream(prompt, conversation_history=conversation_history):
                     full_response += chunk
                     response_placeholder.markdown(full_response)
             
@@ -217,12 +225,12 @@ if prompt := st.chat_input("Ask a question from your documents"):
                     logger.info(f"Querying with selected documents: {st.session_state.selected_docs}")
                     # ask_rag_with_docs is a generator, need to collect all chunks
                     full_response = ""
-                    for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs):
+                    for chunk in ask_rag_with_docs(prompt, st.session_state.selected_docs, conversation_history=conversation_history):
                         full_response += chunk
                     answer = full_response
                 else:
                     logger.info("Querying with all documents")
-                    answer = ask_rag(prompt)
+                    answer = ask_rag(prompt, conversation_history=conversation_history)
             st.markdown(answer)
             
             # Add assistant response to chat history

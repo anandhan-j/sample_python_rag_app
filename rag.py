@@ -1,6 +1,7 @@
 import faiss
 import pickle
 import os
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 
@@ -13,10 +14,22 @@ client = OpenAI(
     api_key="lm-studio"
 )
 
-index = faiss.read_index(f"{VECTOR_DIR}/index.faiss")
+# Initialize variables with default values
+index = None
+texts = []
+doc_metadata = {}
+embeddings = None
 
-with open(f"{VECTOR_DIR}/texts.pkl", "rb") as f:
-    texts = pickle.load(f)
+# Load index if it exists
+index_file = f"{VECTOR_DIR}/index.faiss"
+if os.path.exists(index_file):
+    index = faiss.read_index(index_file)
+
+# Load texts if they exist
+texts_file = f"{VECTOR_DIR}/texts.pkl"
+if os.path.exists(texts_file):
+    with open(texts_file, "rb") as f:
+        texts = pickle.load(f)
 
 # Load metadata if it exists, otherwise create default metadata
 metadata_file = f"{VECTOR_DIR}/metadata.pkl"
@@ -27,33 +40,91 @@ else:
     # Create default metadata for backward compatibility
     doc_metadata = {i: {'source': 'unknown', 'page': 0} for i in range(len(texts))}
 
+# Load embeddings if they exist
+embeddings_file = f"{VECTOR_DIR}/embeddings.pkl"
+if os.path.exists(embeddings_file):
+    with open(embeddings_file, "rb") as f:
+        embeddings = pickle.load(f)
+
 def get_context(question, k=3, selected_docs=None):
     """Retrieve relevant context for a question, optionally filtering by selected documents"""
+    # Check if index exists
+    if index is None:
+        return ""
+    
     q_emb = embedder.encode([question])
-    distances, indices = index.search(q_emb, k * 3)  # Get more results to filter
     
     # Filter by selected documents if specified
     if selected_docs:
-        filtered_contexts = []
-        for i in indices[0]:
-            doc_name = doc_metadata.get(i, {}).get('source', '')
+        # Get indices of chunks that belong to selected documents
+        selected_indices = []
+        for idx, metadata in doc_metadata.items():
+            doc_name = metadata.get('source', '')
             if any(selected in doc_name for selected in selected_docs):
-                filtered_contexts.append(texts[i])
-                if len(filtered_contexts) >= k:
-                    break
+                selected_indices.append(idx)
         
-        if filtered_contexts:
-            context = "\n\n".join(filtered_contexts)
+        if not selected_indices:
+            # No chunks found for selected documents
+            return ""
+        
+        # Search only within selected document chunks
+        if embeddings is not None:
+            # Use pre-computed embeddings for faster search
+            selected_embeddings = []
+            for idx in selected_indices:
+                selected_embeddings.append(embeddings[idx])
+            
+            if selected_embeddings:
+                selected_embeddings = np.array(selected_embeddings)
+                distances, local_indices = index.search(q_emb, min(k, len(selected_indices)))
+                
+                # Map local indices back to global indices
+                filtered_contexts = []
+                for local_idx in local_indices[0]:
+                    if local_idx < len(selected_indices):
+                        global_idx = selected_indices[local_idx]
+                        filtered_contexts.append(texts[global_idx])
+                        if len(filtered_contexts) >= k:
+                            break
+                
+                if filtered_contexts:
+                    context = "\n\n".join(filtered_contexts)
+                else:
+                    context = ""
+            else:
+                context = ""
         else:
-            context = "\n\n".join([texts[i] for i in indices[0][:k]])
+            # Fallback: search all and filter (slower)
+            distances, indices = index.search(q_emb, k * 3)
+            filtered_contexts = []
+            for i in indices[0]:
+                doc_name = doc_metadata.get(i, {}).get('source', '')
+                if any(selected in doc_name for selected in selected_docs):
+                    filtered_contexts.append(texts[i])
+                    if len(filtered_contexts) >= k:
+                        break
+            
+            if filtered_contexts:
+                context = "\n\n".join(filtered_contexts)
+            else:
+                context = ""
     else:
-        context = "\n\n".join([texts[i] for i in indices[0][:k]])
+        distances, indices = index.search(q_emb, k)
+        context = "\n\n".join([texts[i] for i in indices[0]])
     
     return context
 
 def ask_rag(question, k=3):
     """Non-streaming version of RAG query"""
+    # Check if index exists
+    if index is None:
+        return "No documents have been indexed yet. Please convert documents to vectors first."
+    
     context = get_context(question, k)
+    
+    # Check if context is empty
+    if not context:
+        return "Not found in documents."
     
     prompt = f"""
 You are a document assistant.
@@ -66,10 +137,12 @@ Context:
 
 Question:
 {question}
+
+IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources.
 """
 
     response = client.chat.completions.create(
-        model="local-model",
+        model="meta-llama-3.1-8b-instruct",
         messages=[
             {"role": "user", "content": prompt}
         ],
@@ -80,7 +153,17 @@ Question:
 
 def ask_rag_stream(question, k=3):
     """Streaming version of RAG query - yields chunks of response"""
+    # Check if index exists
+    if index is None:
+        yield "No documents have been indexed yet. Please convert documents to vectors first."
+        return
+    
     context = get_context(question, k)
+    
+    # Check if context is empty
+    if not context:
+        yield "Not found in documents."
+        return
     
     prompt = f"""
 You are a document assistant.
@@ -93,10 +176,12 @@ Context:
 
 Question:
 {question}
+
+IMPORTANT: Only use information from the context above. Do not use any external knowledge or information from other sources.
 """
 
     response = client.chat.completions.create(
-        model="local-model",
+        model="meta-llama-3.1-8b-instruct",
         messages=[
             {"role": "user", "content": prompt}
         ],
@@ -110,7 +195,17 @@ Question:
 
 def ask_rag_with_docs(question, selected_docs, k=3):
     """Streaming version of RAG query with specific documents - yields chunks of response"""
+    # Check if index exists
+    if index is None:
+        yield "No documents have been indexed yet. Please convert documents to vectors first."
+        return
+    
     context = get_context(question, k, selected_docs)
+    
+    # Check if context is empty
+    if not context:
+        yield "Not found in documents."
+        return
     
     prompt = f"""
 You are a document assistant.
@@ -123,10 +218,12 @@ Context:
 
 Question:
 {question}
+
+IMPORTANT: Only use information from the selected documents. Do not use any external knowledge or information from other sources.
 """
 
     response = client.chat.completions.create(
-        model="local-model",
+        model="meta-llama-3.1-8b-instruct",
         messages=[
             {"role": "user", "content": prompt}
         ],

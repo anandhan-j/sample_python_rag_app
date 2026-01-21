@@ -43,6 +43,9 @@ with open(f"{VECTOR_DIR}/texts.pkl", "wb") as f:
 with open(f"{VECTOR_DIR}/metadata.pkl", "wb") as f:
     pickle.dump(doc_metadata, f)
 
-print("✅ Documents indexed successfully")
+with open(f"{VECTOR_DIR}/embeddings.pkl", "wb") as f:
+    pickle.dump(embeddings, f)
+
+print("Documents indexed successfully")
 print(f"   - Total chunks: {len(texts)}")
 print(f"   - Documents: {len(set([m['source'] for m in doc_metadata.values()]))}")

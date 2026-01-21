@@ -1,7 +1,21 @@
 import streamlit as st
 import os
 import glob
+import logging
+from datetime import datetime
 from rag import ask_rag, ask_rag_stream, ask_rag_with_docs
+
+# Setup logging
+log_file = "vector_conversion.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="RAG Document QA", layout="wide")
 
@@ -99,21 +113,29 @@ with st.sidebar:
             # Step 1: Check for PDF files
             status_text.text("Step 1: Checking for PDF files...")
             progress_bar.progress(20)
+            logger.info("Step 1: Checking for PDF files...")
             
             if not os.path.exists("data"):
-                st.error("No data directory found. Please upload documents first.")
+                error_msg = "No data directory found. Please upload documents first."
+                logger.error(error_msg)
+                st.error(error_msg)
                 st.session_state.processing = False
                 st.rerun()
             
             pdf_files = [f for f in os.listdir("data") if f.lower().endswith('.pdf')]
             if not pdf_files:
-                st.error("No PDF files found in data directory. Please upload documents first.")
+                error_msg = "No PDF files found in data directory. Please upload documents first."
+                logger.error(error_msg)
+                st.error(error_msg)
                 st.session_state.processing = False
                 st.rerun()
+            
+            logger.info(f"Found {len(pdf_files)} PDF files: {', '.join(pdf_files)}")
             
             # Step 2: Run ingest.py
             status_text.text("Step 2: Extracting text from PDFs...")
             progress_bar.progress(40)
+            logger.info("Step 2: Running ingest.py...")
             
             try:
                 import subprocess
@@ -128,11 +150,27 @@ with st.sidebar:
                     progress_bar.progress(100)
                     status_text.text("✅ Vector conversion completed successfully!")
                     st.success("Documents indexed and vectors created!")
+                    logger.info("Vector conversion completed successfully!")
                 else:
-                    st.error(f"Error during processing: {result.stderr}")
+                    # Log detailed error information
+                    logger.error(f"Vector conversion failed with exit code: {result.returncode}")
+                    if result.stdout:
+                        logger.error(f"STDOUT: {result.stdout}")
+                    if result.stderr:
+                        logger.error(f"STDERR: {result.stderr}")
+                    
+                    # Display both stdout and stderr for better error details
+                    error_msg = f"Error during processing (exit code: {result.returncode})\n\n"
+                    if result.stdout:
+                        error_msg += f"**Output:**\n```\n{result.stdout}\n```\n\n"
+                    if result.stderr:
+                        error_msg += f"**Error:**\n```\n{result.stderr}\n```\n"
+                    
+                    st.error(error_msg)
                     status_text.text("❌ Processing failed")
                 
             except Exception as e:
+                logger.error(f"Exception running ingest.py: {str(e)}")
                 st.error(f"Error running ingest.py: {str(e)}")
                 status_text.text("❌ Processing failed")
             
